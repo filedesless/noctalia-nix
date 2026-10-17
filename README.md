@@ -13,6 +13,8 @@ pending updates to count: versions are pinned in the system flake's
   `/etc/nixos/flake.lock`, the one the system was built from (see below);
   without that file, whether the running system's `nixos-version`
   names a different nixpkgs revision than `flake.lock`,
+- whether a **test is still live**: `/run/current-system` isn't the boot
+  default (`/nix/var/nix/profiles/system`), e.g. after `nixos-rebuild test`,
 - whether `flake.lock` has **uncommitted** changes,
 - every input's pinned date and revision (tooltip).
 
@@ -23,8 +25,12 @@ otherwise.
 **Left click** opens a floating panel with the pinned and latest nixpkgs
 revisions side by side, what needs doing (reboot, switch, commit, update)
 or a line saying nothing does, every input's pin, and **Check**, **Switch**
-(only when a switch is pending) and **Update** buttons. Switch and Update
-run `nh os switch [--update]` on the flake in `$TERMINAL`. **Right click**
+(only when a switch is pending) and **Update** buttons. While a test is
+live, **Keep** (make the running build the boot default, without
+rebuilding) and **Back** (re-activate the boot default) replace Switch. Switch and Update
+run `nh os switch [--update]` on the flake in `$TERMINAL`; every button
+command ends with `noctalia msg plugin filedesless/nix-status:service all
+check`, so the widget updates as soon as it finishes. **Right click**
 re-checks. Local checks run every minute and cost milliseconds; the GitHub
 one (one API request) runs hourly, well under the unauthenticated limit.
 

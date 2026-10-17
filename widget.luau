@@ -2,7 +2,7 @@
 -- Nix Status bar widget: a renderer over the service's "nix.status".
 --
 -- Glyph color, most urgent first: error (the check failed), warning (reboot
--- needed, or flake.lock moved without a switch), primary (the nixpkgs pin
+-- needed, a test still live, or flake.lock moved without a switch), primary (the nixpkgs pin
 -- is stale), on_surface (all current). The text is the nixpkgs pin's age.
 --
 -- Left click: the panel
@@ -33,7 +33,7 @@ local function render()
     return
   end
 
-  if status.reboot or status.switchPending then
+  if status.reboot or status.switchPending or status.testing then
     barWidget.setGlyphColor("warning")
   elseif status.stale then
     barWidget.setGlyphColor("primary")
@@ -46,6 +46,9 @@ local function render()
   local rows = {}
   if status.reboot then
     table.insert(rows, { key = "Reboot", value = "needed: " .. table.concat(status.changed, ", ") .. " changed" })
+  end
+  if status.testing then
+    table.insert(rows, { key = "Testing", value = "running a build that isn't the boot default" })
   end
   if status.switchPending then
     table.insert(rows, { key = "Switch", value = "pending: flake.lock is newer than the running system" })

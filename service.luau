@@ -3,7 +3,7 @@
 --
 -- State channel:
 --   "nix.request"  set by the widget and panel:
---                  { action = "check"|"update"|"switch", n }
+--                  { action = "check"|"update"|"switch"|"keep"|"back", n }
 --   "nix.status"   set here, see localCheck() and remoteCheck() for the fields
 
 -- The system flake; nh's own NH_OS_FLAKE points at the same place.
@@ -25,6 +25,11 @@ for x in kernel initrd kernel-modules; do
     printf 'changed=%s\n' "$x"
 done
 git -C "$f" diff --quiet -- flake.lock 2>/dev/null || printf 'dirty=1\n'
+# A test (or a re-activated older build) runs something other than the boot
+# default, the newest generation of the system profile.
+[ "$(readlink -f /run/current-system)" = "$(readlink -f /nix/var/nix/profiles/system)" ] ||
+  echo testing=1
+printf 'generation=%s\n' "$(readlink /nix/var/nix/profiles/system | tr -dc 0-9)"
 if [ -e /etc/nixos/flake.lock ]; then
   cmp -s /etc/nixos/flake.lock "$f/flake.lock" && echo built=same || echo built=differs
 fi
@@ -135,6 +140,8 @@ local function localCheck(thenRemote)
         table.insert(s.changed, value)
       elseif key == "dirty" then
         s.dirty = true
+      elseif key == "testing" then
+        s.testing = true
       else
         s[key] = value
       end
@@ -175,15 +182,27 @@ local function localCheck(thenRemote)
   end, 10000)
 end
 
--- nh builds in the terminal; sudo is passwordless on wheel. The next local
--- check (within a minute) picks up the result. Wrapped in sh -c so FLAKE's
--- $HOME expands whatever the terminal runs commands with.
-local function runInTerminal(nhArgs)
-  local script = "nh os switch " .. nhArgs .. FLAKE
+-- What the panel's buttons run, in $TERMINAL so the output stays readable.
+-- sudo is passwordless on wheel. FLAKE's $HOME expands in that shell.
+local ACTIONS = {
+  update = "nh os switch --update " .. FLAKE,
+  switch = "nh os switch " .. FLAKE,
+  -- Make the running build the boot default without rebuilding: the same
+  -- two steps nixos-rebuild switch ends with, minus restarting services.
+  keep = "sudo nix-env -p /nix/var/nix/profiles/system --set \"$(readlink -f /run/current-system)\""
+    .. " && sudo /run/current-system/bin/switch-to-configuration boot",
+  -- Re-activate the boot default, leaving the profile alone.
+  back = "sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
+}
+
+local function runInTerminal(action)
+  -- Tell this service to re-check once the command ends, success or not.
+  local script = ACTIONS[action]
+    .. "; noctalia msg plugin filedesless/nix-status:service all check >/dev/null 2>&1"
     .. "; echo; printf 'Press Enter to close'; read _"
   local cmd = "sh -c '" .. string.gsub(script, "'", "'\\''") .. "'"
   if not noctalia.runInTerminal(cmd) then
-    noctalia.notifyError("Nix Status", "No terminal to run nh in")
+    noctalia.notifyError("Nix Status", "No terminal to run the command in")
   end
 end
 
@@ -199,14 +218,20 @@ noctalia.state.watch("nix.request", function(req)
     return
   end
   lastRequest = req.n
-  if req.action == "update" then
-    runInTerminal("--update ")
-  elseif req.action == "switch" then
-    runInTerminal("")
+  if ACTIONS[req.action] then
+    runInTerminal(req.action)
   else
     localCheck(true)
   end
 end)
+
+-- From the commands above when they finish:
+--   noctalia msg plugin filedesless/nix-status:service all check
+function onIpc(event)
+  if event == "check" then
+    localCheck(false)
+  end
+end
 
 -- Called by the host on the interval below.
 function update()

@@ -60,7 +60,11 @@ local function attention(s)
     table.insert(rows, line("power", "warning",
       `Reboot needed: the {table.concat(s.changed, ", ")} changed since boot`))
   end
-  if s.switchPending then
+  if s.testing then
+    table.insert(rows, line("flask", "warning",
+      `Testing a build: the next boot still starts generation {s.generation or "?"}`))
+  end
+  if s.switchPending and not s.testing then
     table.insert(rows, line("refresh-alert", "warning",
       "flake.lock is newer than the running system: switch to apply it"))
   end
@@ -112,7 +116,15 @@ local function render()
   local buttons = {
     ui.button({ text = "Check", glyph = "search", flexGrow = 1, variant = "outline", onClick = "onCheckClicked" }),
   }
-  if s.switchPending then
+  if s.testing then
+    -- Settle the test first; a pending switch can wait.
+    table.insert(buttons, ui.button({
+      text = "Keep", glyph = "check", flexGrow = 1, variant = "primary", onClick = "onKeepClicked",
+    }))
+    table.insert(buttons, ui.button({
+      text = "Back", glyph = "arrow-back-up", flexGrow = 1, variant = "outline", onClick = "onBackClicked",
+    }))
+  elseif s.switchPending then
     table.insert(buttons, ui.button({
       text = "Switch", glyph = "player-play", flexGrow = 1, variant = "primary", onClick = "onSwitchClicked",
     }))
@@ -121,7 +133,7 @@ local function render()
     text = "Update",
     glyph = "progress-down",
     flexGrow = 1,
-    variant = (s.behind and not s.switchPending) and "primary" or "outline",
+    variant = (s.behind and not s.switchPending and not s.testing) and "primary" or "outline",
     onClick = "onUpdateClicked",
   }))
 
@@ -175,4 +187,14 @@ end
 function onSwitchClicked()
   panel.close()
   request("switch")
+end
+
+function onKeepClicked()
+  panel.close()
+  request("keep")
+end
+
+function onBackClicked()
+  panel.close()
+  request("back")
 end
