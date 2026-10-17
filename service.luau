@@ -25,6 +25,9 @@ for x in kernel initrd kernel-modules; do
     printf 'changed=%s\n' "$x"
 done
 git -C "$f" diff --quiet -- flake.lock 2>/dev/null || printf 'dirty=1\n'
+if [ -e /etc/nixos/flake.lock ]; then
+  cmp -s /etc/nixos/flake.lock "$f/flake.lock" && echo built=same || echo built=differs
+fi
 echo lock
 cat "$f/flake.lock"
 ]]
@@ -148,10 +151,16 @@ local function localCheck(thenRemote)
           s.nixpkgsRepo = `{o.owner}/{o.repo}`
           s.nixpkgsBranch = o.ref or "master"
         end
-        -- nixos-version ends with the nixpkgs revision the system was built
-        -- from: a mismatch means flake.lock moved without a switch.
-        local built = string.match(s.version or "", "%.(%x+)$")
-        s.switchPending = built ~= nil and built ~= input.rev
+        if s.built then
+          -- The system ships the flake.lock it was built from
+          -- (environment.etc."nixos/flake.lock"): any input moving counts.
+          s.switchPending = s.built == "differs"
+        else
+          -- Otherwise only nixpkgs can be told apart: nixos-version ends
+          -- with the nixpkgs revision the system was built from.
+          local built = string.match(s.version or "", "%.(%x+)$")
+          s.switchPending = built ~= nil and built ~= input.rev
+        end
       end
       input.original = nil
     end

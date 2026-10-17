@@ -9,7 +9,9 @@ pending updates to count: versions are pinned in the system flake's
 - whether a **reboot** is needed: the kernel, initrd or kernel modules
   (NVIDIA's among them) differ between `/run/booted-system` and
   `/run/current-system`,
-- whether a **switch is pending**: the running system's `nixos-version`
+- whether a **switch is pending**: the repo's `flake.lock` differs from
+  `/etc/nixos/flake.lock`, the one the system was built from (see below);
+  without that file, whether the running system's `nixos-version`
   names a different nixpkgs revision than `flake.lock`,
 - whether `flake.lock` has **uncommitted** changes,
 - every input's pinned date and revision (tooltip).
@@ -43,3 +45,13 @@ noctalia msg plugins enable filedesless/nix-status
 ```
 
 Then add a widget of type `filedesless/nix-status:widget` to a bar.
+
+## Telling when a switch is pending
+
+`nix flake update` only rewrites `flake.lock`; nothing changes until the
+next switch. To see any input move (not just nixpkgs, which is all
+`nixos-version` reveals), have the system keep the lock it was built from:
+
+```nix
+environment.etc."nixos/flake.lock".source = ./flake.lock; # path from this module
+```
