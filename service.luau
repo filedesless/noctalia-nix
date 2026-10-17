@@ -1,19 +1,21 @@
--- Checks the system flake and the running system once a minute, and on
--- request from the widget. Everything it reads is local (flake.lock, two
--- symlink trees, git), so a check costs a few milliseconds.
+-- Checks the system flake and the running system once a minute, the
+-- nixpkgs branch on GitHub once an hour, and both on request.
 --
 -- State channel:
---   "nix.request"  set by the widget: { action = "check"|"update", n }
---   "nix.status"   set here, see check() for the fields
+--   "nix.request"  set by the widget and panel:
+--                  { action = "check"|"update"|"switch", n }
+--   "nix.status"   set here, see localCheck() and remoteCheck() for the fields
 
 -- The system flake; nh's own NH_OS_FLAKE points at the same place.
 local FLAKE = "$HOME/src/nixos"
 -- A nixpkgs pin older than this many days gets the accent color.
 local STALE_DAYS = 14
-local CHECK_INTERVAL_S = 60
+local LOCAL_INTERVAL_S = 60
+-- GitHub allows 60 unauthenticated API requests an hour.
+local REMOTE_INTERVAL_S = 3600
 
 -- Prints key=value lines, then "lock" and flake.lock itself. $1 is FLAKE,
--- expanded by this shell.
+-- expanded by this shell. All local, so it takes milliseconds.
 local PROBE = [[
 f=$(eval echo "$1")
 printf 'flake=%s\n' "$f"
@@ -27,9 +29,22 @@ echo lock
 cat "$f/flake.lock"
 ]]
 
-local lastCheck = 0
+-- The newest commit on a branch: "<sha> <epoch>". $1 is owner/repo, $2 the
+-- branch. The commits list, unlike the single-commit endpoint, leaves out
+-- the changed files.
+local REMOTE_PROBE = [[
+curl -fsS --max-time 15 -H 'Accept: application/vnd.github+json' \
+  "https://api.github.com/repos/$1/commits?sha=$2&per_page=1" |
+  jq -r '.[0] | "\(.sha) \(.commit.committer.date | fromdate)"'
+]]
+
+local status = { ok = false }
+local remote = nil
+local lastLocal = 0
+local lastRemote = 0
 local lastRequest = 0
-local checking = false
+local checkingLocal = false
+local checkingRemote = false
 
 local function days(seconds)
   return math.floor(seconds / 86400)
@@ -50,6 +65,8 @@ local function inputs(lock, now)
         rev = locked.rev and string.sub(locked.rev, 1, 7) or "",
         date = os.date("%Y-%m-%d", locked.lastModified),
         age = days(now - locked.lastModified),
+        modified = locked.lastModified,
+        original = node.original,
       })
     end
   end
@@ -57,66 +74,115 @@ local function inputs(lock, now)
   return list
 end
 
-local function publish(status)
-  status.checkedAt = os.date("%H:%M")
+local function publish()
+  status.remote = remote
+  -- Behind the branch when GitHub has a different, newer head.
+  status.behind = remote ~= nil and remote.ok and status.nixpkgsRev ~= nil
+    and remote.rev ~= status.nixpkgsRev
   noctalia.state.set("nix.status", status)
 end
 
-local function check()
-  if checking then
+local function remoteCheck()
+  local repo, branch = status.nixpkgsRepo, status.nixpkgsBranch
+  if checkingRemote or not repo or not branch then
     return
   end
-  checking = true
-  lastCheck = os.time()
+  checkingRemote = true
+  lastRemote = os.time()
+  noctalia.runAsync({ "sh", "-c", REMOTE_PROBE, "sh", repo, branch }, function(res)
+    checkingRemote = false
+    local sha, epoch = string.match(res.stdout or "", "^(%x+) (%d+)")
+    if res.exitCode ~= 0 or not sha then
+      remote = { ok = false, err = "couldn't reach GitHub", checkedAt = os.date("%H:%M") }
+    else
+      local modified = tonumber(epoch)
+      remote = {
+        ok = true,
+        branch = branch,
+        rev = string.sub(sha, 1, 7),
+        date = os.date("%Y-%m-%d", modified),
+        age = days(os.time() - modified),
+        checkedAt = os.date("%H:%M"),
+      }
+    end
+    publish()
+  end, 20000)
+end
+
+local function localCheck(thenRemote)
+  if checkingLocal then
+    return
+  end
+  checkingLocal = true
+  lastLocal = os.time()
   noctalia.runAsync({ "sh", "-c", PROBE, "sh", FLAKE }, function(res)
-    checking = false
+    checkingLocal = false
     local out = res.stdout or ""
     local header, body = string.match(out, "^(.-)\nlock\n(.*)$")
     local lock = body and noctalia.json.decode(body)
     if res.timedOut or not lock then
-      publish({ ok = false, err = res.timedOut and "check timed out" or "couldn't read flake.lock" })
+      status = { ok = false, err = res.timedOut and "check timed out" or "couldn't read flake.lock" }
+      publish()
       return
     end
 
-    local status = { ok = true, changed = {}, dirty = false }
+    local s = { ok = true, changed = {}, dirty = false }
     for key, value in string.gmatch(header, "([%w]+)=([^\n]*)") do
       if key == "changed" then
-        table.insert(status.changed, value)
+        table.insert(s.changed, value)
       elseif key == "dirty" then
-        status.dirty = true
+        s.dirty = true
       else
-        status[key] = value
+        s[key] = value
       end
     end
 
-    local now = os.time()
-    status.inputs = inputs(lock, now)
-    for _, input in ipairs(status.inputs) do
+    s.inputs = inputs(lock, os.time())
+    for _, input in ipairs(s.inputs) do
       if input.name == "nixpkgs" then
-        status.nixpkgsAge = input.age
-        status.nixpkgsDate = input.date
+        s.nixpkgsAge = input.age
+        s.nixpkgsDate = input.date
+        s.nixpkgsRev = input.rev
+        local o = input.original
+        if type(o) == "table" and o.type == "github" then
+          s.nixpkgsRepo = `{o.owner}/{o.repo}`
+          s.nixpkgsBranch = o.ref or "master"
+        end
         -- nixos-version ends with the nixpkgs revision the system was built
         -- from: a mismatch means flake.lock moved without a switch.
-        local built = string.match(status.version or "", "%.(%x+)$")
-        status.switchPending = built ~= nil and built ~= input.rev
+        local built = string.match(s.version or "", "%.(%x+)$")
+        s.switchPending = built ~= nil and built ~= input.rev
       end
+      input.original = nil
     end
-    status.stale = (status.nixpkgsAge or 0) >= STALE_DAYS
-    status.reboot = #status.changed > 0
-    publish(status)
+    s.stale = (s.nixpkgsAge or 0) >= STALE_DAYS
+    s.reboot = #s.changed > 0
+    s.checkedAt = os.date("%H:%M")
+    status = s
+    publish()
+    if thenRemote then
+      remoteCheck()
+    end
   end, 10000)
 end
 
-local function runUpdate()
-  -- nh builds in the terminal; sudo is passwordless on wheel. The widget
-  -- picks up the result at the next check. Wrapped in sh -c so FLAKE's
-  -- $HOME expands whatever the terminal runs commands with.
-  local script = "nh os switch --update " .. FLAKE
+-- nh builds in the terminal; sudo is passwordless on wheel. The next local
+-- check (within a minute) picks up the result. Wrapped in sh -c so FLAKE's
+-- $HOME expands whatever the terminal runs commands with.
+local function runInTerminal(nhArgs)
+  local script = "nh os switch " .. nhArgs .. FLAKE
     .. "; echo; printf 'Press Enter to close'; read _"
   local cmd = "sh -c '" .. string.gsub(script, "'", "'\\''") .. "'"
   if not noctalia.runInTerminal(cmd) then
-    noctalia.notifyError("Nix Status", "No terminal to run the update in")
+    noctalia.notifyError("Nix Status", "No terminal to run nh in")
   end
+end
+
+-- Start from the request already in state, so a reload doesn't replay the
+-- last one (an update would open a terminal).
+do
+  local prev = noctalia.state.get("nix.request")
+  lastRequest = type(prev) == "table" and tonumber(prev.n) or 0
 end
 
 noctalia.state.watch("nix.request", function(req)
@@ -125,18 +191,21 @@ noctalia.state.watch("nix.request", function(req)
   end
   lastRequest = req.n
   if req.action == "update" then
-    runUpdate()
+    runInTerminal("--update ")
+  elseif req.action == "switch" then
+    runInTerminal("")
   else
-    check()
+    localCheck(true)
   end
 end)
 
 -- Called by the host on the interval below.
 function update()
-  if os.time() - lastCheck >= CHECK_INTERVAL_S then
-    check()
+  local now = os.time()
+  if now - lastLocal >= LOCAL_INTERVAL_S then
+    localCheck(now - lastRemote >= REMOTE_INTERVAL_S)
   end
 end
 
 noctalia.setUpdateInterval(5000)
-check()
+localCheck(true)

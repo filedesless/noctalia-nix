@@ -5,8 +5,8 @@
 -- needed, or flake.lock moved without a switch), primary (the nixpkgs pin
 -- is stale), on_surface (all current). The text is the nixpkgs pin's age.
 --
--- Left click: update (nh os switch --update) in a terminal
--- Right click: check now
+-- Left click: the panel
+-- Right click: check now, GitHub included
 
 local status = nil
 
@@ -53,12 +53,18 @@ local function render()
   if status.dirty then
     table.insert(rows, { key = "flake.lock", value = "not committed" })
   end
+  local remote = status.remote
+  if remote ~= nil and remote.ok then
+    table.insert(rows, { key = "GitHub", value = status.behind
+      and `{remote.branch} moved to {remote.rev} ({remote.date})`
+      or `{remote.branch} is still at {remote.rev}` })
+  end
   for _, input in ipairs(status.inputs or {}) do
     table.insert(rows, { key = input.name, value = `{input.date} ({input.age}d) {input.rev}` })
   end
   table.insert(rows, { key = "Running", value = status.version or "?" })
   table.insert(rows, { key = "Checked", value = status.checkedAt or "?" })
-  table.insert(rows, { key = "", value = "Left click: update · Right click: check" })
+  table.insert(rows, { key = "", value = "Left click: details · Right click: check" })
   barWidget.setTooltip(rows)
 end
 
@@ -74,7 +80,7 @@ function update()
 end
 
 function onClick()
-  request("update")
+  noctalia.togglePanel("filedesless/nix-status:panel")
 end
 
 function onRightClick()

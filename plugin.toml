@@ -14,9 +14,19 @@ plugin_api = 26
 author = "filedesless"
 license = "MIT"
 icon = "snowflake"
-description = "NixOS flake status: age of the nixpkgs pin, pending switch, uncommitted flake.lock, reboot needed. Click to update with nh."
-tags = ["bar", "service", "system", "nixos", "utility"]
-dependencies = ["nh", "git"]
+description = "NixOS flake status: age of the nixpkgs pin against GitHub, pending switch, uncommitted flake.lock, reboot needed, and a panel to update with nh."
+tags = ["bar", "panel", "service", "system", "nixos", "utility"]
+dependencies = ["nh", "git", "curl", "jq"]
+
+# Details and the Check / Switch / Update buttons; the widget opens it.
+[[panel]]
+id = "panel"
+entry = "panel.luau"
+width = 440
+height = 450
+placement = "floating"
+position = "auto"
+open_near_click = true
 
 # Reads flake.lock and /run/{booted,current}-system and publishes
 # "nix.status"; runs the update for the widget.
