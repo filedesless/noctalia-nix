@@ -200,10 +200,18 @@ local function runInTerminal(action)
   local script = ACTIONS[action]
     .. "; noctalia msg plugin filedesless/nix-status:service all check >/dev/null 2>&1"
     .. "; echo; printf 'Press Enter to close'; read _"
-  local cmd = "sh -c '" .. string.gsub(script, "'", "'\\''") .. "'"
-  if not noctalia.runInTerminal(cmd) then
-    noctalia.notifyError("Nix Status", "No terminal to run the command in")
-  end
+  -- Not noctalia.runInTerminal: that terminal would live in noctalia.service's
+  -- cgroup, and a switch that changes noctalia stops that service, killing
+  -- the terminal and nh halfway (after the test activation, before the boot
+  -- entry). systemd-run gives it a unit of its own.
+  noctalia.runAsync({
+    "systemd-run", "--user", "--collect", "--quiet", "--unit", `nix-status-{action}-{os.time()}`,
+    "--", "sh", "-c", 'exec "${TERMINAL:-alacritty}" -e sh -c "$1"', "sh", script,
+  }, function(res)
+    if res.exitCode ~= 0 then
+      noctalia.notifyError("Nix Status", "Couldn't start a terminal: " .. (res.stderr or ""))
+    end
+  end, 10000)
 end
 
 -- Start from the request already in state, so a reload doesn't replay the
