@@ -41,11 +41,12 @@ local function revBox(caption, glyph, rev, detail)
   })
 end
 
--- One line with a colored glyph.
-local function line(glyph, color, text)
+-- One line per flag, lit when set and dimmed when not, like the bar's glyphs.
+local OFF = "on_surface/0.4"
+local function line(glyph, on, color, text)
   return ui.row({ gap = 8, align = "center" }, {
-    ui.glyph({ name = glyph, size = 16, color = color }),
-    ui.label({ text = text, fontSize = 12 }),
+    ui.glyph({ name = glyph, size = 16, color = on and color or OFF }),
+    ui.label({ text = text, fontSize = 12, color = on and "on_surface" or OFF }),
   })
 end
 
@@ -53,32 +54,27 @@ local function card(children)
   return ui.column({ fill = CARD, radius = 8, paddingV = 8, paddingH = 10, gap = 6 }, children)
 end
 
--- What needs doing, most urgent first, or one line saying nothing does.
+-- What needs doing: every flag, always, so the panel's height never changes
+-- (it's fixed in plugin.toml and doesn't follow the content).
 local function attention(s)
-  local rows = {}
-  if s.reboot then
-    table.insert(rows, line("power", "warning",
-      `Reboot needed: the {table.concat(s.changed, ", ")} changed since boot`))
-  end
-  if s.testing then
-    table.insert(rows, line("flask", "warning",
-      `Testing a build: the next boot still starts generation {s.generation or "?"}`))
-  end
-  if s.switchPending and not s.testing then
-    table.insert(rows, line("refresh-alert", "warning",
-      "flake.lock is newer than the running system: switch to apply it"))
-  end
-  if s.dirty then
-    table.insert(rows, line("git-commit", "primary", "flake.lock has uncommitted changes"))
-  end
-  if s.behind then
-    table.insert(rows, line("download", "primary",
-      `{s.remote.branch} has moved ({s.remote.date}): update to get it`))
-  end
-  if #rows == 0 then
-    table.insert(rows, line("circle-check", "primary",
-      "Up to date: running what flake.lock pins, no reboot needed"))
-  end
+  local remote = s.remote
+  local rows = {
+    line("power", s.reboot, "tertiary", s.reboot
+      and `Reboot needed: the {table.concat(s.changed, ", ")} changed`
+      or "No reboot needed"),
+    line("flask", s.testing, "tertiary", s.testing
+      and `Testing a build; the boot default is generation {s.generation or "?"}`
+      or "No test running"),
+    line("refresh-alert", s.switchPending, "tertiary", s.switchPending
+      and "flake.lock changed, not built yet: switch to apply it"
+      or "No switch pending"),
+    line("git-commit", s.dirty, "primary", s.dirty
+      and "flake.lock has uncommitted changes"
+      or "flake.lock committed"),
+    line("download", s.behind, "primary", s.behind
+      and `{remote.branch} has moved ({remote.date}): update to get it`
+      or "No newer nixpkgs on GitHub"),
+  }
   return card(rows)
 end
 
@@ -113,20 +109,20 @@ local function render()
     remoteRev, remoteDetail = "?", remote.err
   end
 
+  -- Check is a bare icon; then Switch, which makes the system match the repo
+  -- for good whatever is pending or being tested, Back, which drops a test,
+  -- and Update, always there.
   local buttons = {
-    ui.button({ text = "Check", glyph = "search", flexGrow = 1, variant = "outline", onClick = "onCheckClicked" }),
+    ui.button({ glyph = "refresh", variant = "outline", onClick = "onCheckClicked", tooltip = "Check now" }),
   }
-  if s.testing then
-    -- Settle the test first; a pending switch can wait.
-    table.insert(buttons, ui.button({
-      text = "Keep", glyph = "check", flexGrow = 1, variant = "primary", onClick = "onKeepClicked",
-    }))
-    table.insert(buttons, ui.button({
-      text = "Back", glyph = "arrow-back-up", flexGrow = 1, variant = "outline", onClick = "onBackClicked",
-    }))
-  elseif s.switchPending then
+  if s.switchPending or s.testing then
     table.insert(buttons, ui.button({
       text = "Switch", glyph = "player-play", flexGrow = 1, variant = "primary", onClick = "onSwitchClicked",
+    }))
+  end
+  if s.testing then
+    table.insert(buttons, ui.button({
+      text = "Back", glyph = "arrow-back-up", flexGrow = 1, variant = "outline", onClick = "onBackClicked",
     }))
   end
   table.insert(buttons, ui.button({
@@ -187,11 +183,6 @@ end
 function onSwitchClicked()
   panel.close()
   request("switch")
-end
-
-function onKeepClicked()
-  panel.close()
-  request("keep")
 end
 
 function onBackClicked()

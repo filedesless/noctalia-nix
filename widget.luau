@@ -1,9 +1,9 @@
 --!nonstrict
 -- Nix Status bar widget: a renderer over the service's "nix.status".
 --
--- Glyph color, most urgent first: error (the check failed), warning (reboot
--- needed, a test still live, or flake.lock moved without a switch), primary (the nixpkgs pin
--- is stale), on_surface (all current). The text is the nixpkgs pin's age.
+-- A snowflake, red if the check failed, then a glyph per flag (the panel's)
+-- in a fixed place: lit when set, dimmed when not. Then the nixpkgs pin's
+-- age.
 --
 -- Left click: the panel
 -- Right click: check now, GitHub included
@@ -16,32 +16,65 @@ local function request(action)
   noctalia.state.set("nix.request", { n = n, action = action })
 end
 
-local function render()
-  barWidget.setGlyph("snowflake")
+-- An unset flag's glyph stays in place, dimmed, so the bar doesn't shift.
+local ON = "on_surface"
+local OFF = "on_surface/0.4"
 
+-- Every flag's glyph, in the panel's order and with its glyphs: lit when
+-- set, dimmed when not or when there's no status to read. Each one says on
+-- hover what it means and whether it's set.
+local function flags(s)
+  local function flag(glyph, on, yes, no)
+    return { glyph = glyph, color = on and ON or OFF, tooltip = on and yes or no }
+  end
+  s = s or {}
+  local changed = table.concat(s.changed or {}, ", ")
+  return {
+    flag("power", s.reboot,
+      `Reboot needed: {changed} changed`, "Reboot: not needed"),
+    flag("flask", s.testing,
+      "Testing a build, not the boot default", "Test: none running"),
+    flag("refresh-alert", s.switchPending,
+      "Switch pending: flake.lock changed, not built yet", "Switch: none pending"),
+    flag("git-commit", s.dirty,
+      "flake.lock has uncommitted changes", "flake.lock: committed"),
+    flag("download", s.behind,
+      "GitHub has a newer nixpkgs: update to get it", "nixpkgs: no newer version on GitHub"),
+  }
+end
+
+local function draw(color, list, text)
+  local container = barWidget.isVertical() and ui.column or ui.row
+  local children = { ui.glyph({ name = "snowflake", color = color }) }
+  for _, flag in ipairs(list) do
+    -- A glyph takes no tooltip; a row around it does, but then the row is
+    -- its own hover target and needs the click (and pointer) back. A row
+    -- has no onRightClick, so right-clicking an icon does nothing.
+    table.insert(children, ui.row({ tooltip = flag.tooltip, onClick = "onClick" }, {
+      ui.glyph({ name = flag.glyph, size = 11, color = flag.color }),
+    }))
+  end
+  if text ~= "" then
+    table.insert(children, ui.label({ text = text }))
+  end
+  barWidget.render(container({ gap = 4, align = "center" }, children))
+end
+
+local function render()
   if status == nil then
-    barWidget.setGlyphColor("on_surface")
-    barWidget.setText("")
+    draw(ON, flags(nil), "")
     barWidget.setTooltip({ { key = "Nix", value = "checking..." } })
     return
   end
 
   if not status.ok then
-    barWidget.setGlyphColor("error")
-    barWidget.setText("")
+    draw("error", flags(nil), "")
     barWidget.setTooltip({ { key = "Nix", value = status.err or "check failed" } })
     return
   end
 
-  if status.reboot or status.switchPending or status.testing then
-    barWidget.setGlyphColor("warning")
-  elseif status.stale then
-    barWidget.setGlyphColor("primary")
-  else
-    barWidget.setGlyphColor("on_surface")
-  end
   local age = status.nixpkgsAge
-  barWidget.setText(age and not barWidget.isVertical() and `{age}d` or "")
+  draw(ON, flags(status), age and not barWidget.isVertical() and `{age}d` or "")
 
   local rows = {}
   if status.reboot then

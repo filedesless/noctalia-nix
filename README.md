@@ -18,16 +18,19 @@ pending updates to count: versions are pinned in the system flake's
 - whether `flake.lock` has **uncommitted** changes,
 - every input's pinned date and revision (tooltip).
 
-Glyph color: `error` if the check failed, `warning` for reboot or pending
-switch, `primary` once the nixpkgs pin is 14 days old, `on_surface`
-otherwise.
+Bar: a snowflake (red if the check failed), then a glyph per flag, always
+in place, lit when set and dimmed when not: power (reboot), flask (test),
+refresh-alert (switch), git-commit (uncommitted `flake.lock`), download
+(newer nixpkgs on GitHub). Hovering one says what it means; the text is the
+nixpkgs pin's age.
 
 **Left click** opens a floating panel with the pinned and latest nixpkgs
 revisions side by side, what needs doing (reboot, switch, commit, update)
-or a line saying nothing does, every input's pin, and **Check**, **Switch**
-(only when a switch is pending) and **Update** buttons. While a test is
-live, **Keep** (make the running build the boot default, without
-rebuilding) and **Back** (re-activate the boot default) replace Switch. Switch and Update
+or a line saying nothing does, every input's pin, and a row of buttons: a
+**Check** icon, then up to three more. **Switch** shows when a switch is pending
+or a test is live: it makes the system match the repo for good, whatever was
+being tested. **Back** shows while a test is live and re-activates the boot
+default. **Update** is always there. Switch and Update
 run `nh os switch [--update]` on the flake in `$TERMINAL`; every button
 command ends with `noctalia msg plugin filedesless/nix-status:service all
 check`, so the widget updates as soon as it finishes. **Right click**

@@ -3,7 +3,7 @@
 --
 -- State channel:
 --   "nix.request"  set by the widget and panel:
---                  { action = "check"|"update"|"switch"|"keep"|"back", n }
+--                  { action = "check"|"update"|"switch"|"back", n }
 --   "nix.status"   set here, see localCheck() and remoteCheck() for the fields
 
 -- The system flake; nh's own NH_OS_FLAKE points at the same place.
@@ -187,10 +187,6 @@ end
 local ACTIONS = {
   update = "nh os switch --update " .. FLAKE,
   switch = "nh os switch " .. FLAKE,
-  -- Make the running build the boot default without rebuilding: the same
-  -- two steps nixos-rebuild switch ends with, minus restarting services.
-  keep = "sudo nix-env -p /nix/var/nix/profiles/system --set \"$(readlink -f /run/current-system)\""
-    .. " && sudo /run/current-system/bin/switch-to-configuration boot",
   -- Re-activate the boot default, leaving the profile alone.
   back = "sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch",
 }
