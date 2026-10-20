@@ -3,7 +3,7 @@
 # NixOS has no pending updates to count: versions are pinned in the
 # system flake's flake.lock and only move with `nix flake update`. So the
 # widget shows how old the nixpkgs pin is, whether the running system was
-# built from the current lock, whether flake.lock has uncommitted changes,
+# built from the current flake, whether the flake has uncommitted changes,
 # and whether a reboot is needed (the kernel, initrd or kernel modules,
 # NVIDIA's among them, differ from the booted ones).
 
@@ -14,16 +14,18 @@ plugin_api = 26
 author = "filedesless"
 license = "MIT"
 icon = "snowflake"
-description = "NixOS flake status: age of the nixpkgs pin against GitHub, pending switch, uncommitted flake.lock, reboot needed, and a panel to update with nh."
+description = "NixOS flake status: age of the nixpkgs pin against GitHub, pending switch, uncommitted changes, reboot needed, and a panel to update with nh."
 tags = ["bar", "panel", "service", "system", "nixos", "utility"]
 dependencies = ["nh", "git", "curl", "jq"]
 
-# Details and the Check / Switch / Update buttons; the widget opens it.
+# Details and the Check / Switch / Back / Update buttons; the widget opens it.
+# The height doesn't follow the content: it fits up to 8 flake inputs.
+# panel.luau's root column is this height less the padding (28).
 [[panel]]
 id = "panel"
 entry = "panel.luau"
 width = 440
-height = 498
+height = 560
 placement = "floating"
 position = "auto"
 open_near_click = true

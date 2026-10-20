@@ -138,7 +138,9 @@ local function render()
     checked ..= ` · GitHub {remote.checkedAt}`
   end
 
-  panel.render(ui.column({ gap = 8 }, {
+  -- The panel's height in plugin.toml less its padding: the column doesn't
+  -- stretch to the panel on its own, and the spacer below needs room to grow.
+  panel.render(ui.column({ gap = 8, height = 532 }, {
     ui.row({ justify = "space_between", align = "center" }, {
       ui.label({ text = "NixOS", fontSize = 16 }),
       ui.label({ text = s.nixpkgsBranch or "", fontSize = 12 }),
@@ -150,7 +152,14 @@ local function render()
     }),
     attention(s),
     inputRows(s),
-    ui.label({ text = `Running {s.version or "?"}{s.revision and " from " .. s.revision or ""} · {checked}`, fontSize = 11, color = "on_surface/0.7" }),
+    -- One line: the commit says more than the version, which only names nixpkgs.
+    ui.label({
+      text = s.revision and `Built from {s.revision} · {checked}` or `Running {s.version or "?"} · {checked}`,
+      fontSize = 11,
+      color = "on_surface/0.7",
+    }),
+    -- Keeps the buttons at the bottom while the flake has fewer than 8 inputs.
+    ui.column({ flexGrow = 1 }, {}),
     ui.row({ gap = 8, align = "center", justify = "space_between" }, buttons),
   }))
 end
