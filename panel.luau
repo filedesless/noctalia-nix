@@ -66,11 +66,11 @@ local function attention(s)
       and `Testing a build; the boot default is generation {s.generation or "?"}`
       or "No test running"),
     line("refresh-alert", s.switchPending, "tertiary", s.switchPending
-      and "flake.lock changed, not built yet: switch to apply it"
+      and "The flake changed, not built yet: switch to apply it"
       or "No switch pending"),
     line("git-commit", s.dirty, "primary", s.dirty
-      and "flake.lock has uncommitted changes"
-      or "flake.lock committed"),
+      and "The flake has uncommitted changes"
+      or "Flake committed"),
     line("download", s.behind, "primary", s.behind
       and `{remote.branch} has moved ({remote.date}): update to get it`
       or "No newer nixpkgs on GitHub"),
@@ -150,7 +150,7 @@ local function render()
     }),
     attention(s),
     inputRows(s),
-    ui.label({ text = `Running {s.version or "?"} · {checked}`, fontSize = 11, color = "on_surface/0.7" }),
+    ui.label({ text = `Running {s.version or "?"}{s.revision and " from " .. s.revision or ""} · {checked}`, fontSize = 11, color = "on_surface/0.7" }),
     ui.row({ gap = 8, align = "center", justify = "space_between" }, buttons),
   }))
 end

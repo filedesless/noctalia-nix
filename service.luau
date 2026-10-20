@@ -24,13 +24,23 @@ for x in kernel initrd kernel-modules; do
   [ "$(readlink /run/booted-system/$x)" = "$(readlink /run/current-system/$x)" ] ||
     printf 'changed=%s\n' "$x"
 done
-git -C "$f" diff --quiet -- flake.lock 2>/dev/null || printf 'dirty=1\n'
+printf 'revision=%s\n' "$(/run/current-system/sw/bin/nixos-version --configuration-revision 2>/dev/null)"
+git -C "$f" diff --quiet HEAD 2>/dev/null || printf 'dirty=1\n'
 # A test (or a re-activated older build) runs something other than the boot
 # default, the newest generation of the system profile.
 [ "$(readlink -f /run/current-system)" = "$(readlink -f /nix/var/nix/profiles/system)" ] ||
   echo testing=1
 printf 'generation=%s\n' "$(readlink /nix/var/nix/profiles/system | tr -dc 0-9)"
-if [ -e /etc/nixos/flake.lock ]; then
+src=/etc/nixos/flake
+if [ -d "$src" ]; then
+  # The source the system was built from against the files git tracks, the
+  # ones a git flake sees, uncommitted edits included. Docs don't count.
+  a=$(cd "$src" && find . ! -type d ! -name '*.md' | sed 's|^\./||' | LC_ALL=C sort)
+  b=$(git -C "$f" ls-files -- ':!:*.md' | LC_ALL=C sort)
+  [ "$a" = "$b" ] && printf '%s\n' "$b" | while IFS= read -r x; do
+    cmp -s "$src/$x" "$f/$x" || exit 1
+  done && echo built=same || echo built=differs
+elif [ -e /etc/nixos/flake.lock ]; then
   cmp -s /etc/nixos/flake.lock "$f/flake.lock" && echo built=same || echo built=differs
 fi
 echo lock
@@ -159,8 +169,8 @@ local function localCheck(thenRemote)
           s.nixpkgsBranch = o.ref or "master"
         end
         if s.built then
-          -- The system ships the flake.lock it was built from
-          -- (environment.etc."nixos/flake.lock"): any input moving counts.
+          -- The system ships the flake source it was built from
+          -- (environment.etc."nixos/flake"), or at least its flake.lock.
           s.switchPending = s.built == "differs"
         else
           -- Otherwise only nixpkgs can be told apart: nixos-version ends
@@ -171,6 +181,9 @@ local function localCheck(thenRemote)
       end
       input.original = nil
     end
+    -- "<sha>[-dirty]", from system.configurationRevision.
+    local sha, suffix = string.match(s.revision or "", "^(%x+)(.*)$")
+    s.revision = sha and string.sub(sha, 1, 7) .. suffix or nil
     s.stale = (s.nixpkgsAge or 0) >= STALE_DAYS
     s.reboot = #s.changed > 0
     s.checkedAt = os.date("%H:%M")

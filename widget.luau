@@ -35,9 +35,9 @@ local function flags(s)
     flag("flask", s.testing,
       "Testing a build, not the boot default", "Test: none running"),
     flag("refresh-alert", s.switchPending,
-      "Switch pending: flake.lock changed, not built yet", "Switch: none pending"),
+      "Switch pending: the flake changed, not built yet", "Switch: none pending"),
     flag("git-commit", s.dirty,
-      "flake.lock has uncommitted changes", "flake.lock: committed"),
+      "The flake has uncommitted changes", "Flake: committed"),
     flag("download", s.behind,
       "GitHub has a newer nixpkgs: update to get it", "nixpkgs: no newer version on GitHub"),
   }
@@ -84,10 +84,10 @@ local function render()
     table.insert(rows, { key = "Testing", value = "running a build that isn't the boot default" })
   end
   if status.switchPending then
-    table.insert(rows, { key = "Switch", value = "pending: flake.lock is newer than the running system" })
+    table.insert(rows, { key = "Switch", value = "pending: the flake is newer than the running system" })
   end
   if status.dirty then
-    table.insert(rows, { key = "flake.lock", value = "not committed" })
+    table.insert(rows, { key = "Flake", value = "not committed" })
   end
   local remote = status.remote
   if remote ~= nil and remote.ok then
@@ -98,7 +98,8 @@ local function render()
   for _, input in ipairs(status.inputs or {}) do
     table.insert(rows, { key = input.name, value = `{input.date} ({input.age}d) {input.rev}` })
   end
-  table.insert(rows, { key = "Running", value = status.version or "?" })
+  table.insert(rows, { key = "Running", value = (status.version or "?")
+    .. (status.revision and ` from {status.revision}` or "") })
   table.insert(rows, { key = "Checked", value = status.checkedAt or "?" })
   table.insert(rows, { key = "", value = "Left click: details · Right click: check" })
   barWidget.setTooltip(rows)

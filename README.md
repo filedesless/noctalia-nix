@@ -9,18 +9,20 @@ pending updates to count: versions are pinned in the system flake's
 - whether a **reboot** is needed: the kernel, initrd or kernel modules
   (NVIDIA's among them) differ between `/run/booted-system` and
   `/run/current-system`,
-- whether a **switch is pending**: the repo's `flake.lock` differs from
-  `/etc/nixos/flake.lock`, the one the system was built from (see below);
-  without that file, whether the running system's `nixos-version`
-  names a different nixpkgs revision than `flake.lock`,
+- whether a **switch is pending**: the files git tracks in the repo,
+  uncommitted edits included, differ from `/etc/nixos/flake`, the source
+  the system was built from (see below; Markdown files don't count);
+  failing that, the repo's `flake.lock` differs from
+  `/etc/nixos/flake.lock`; failing that, the running system's
+  `nixos-version` names a different nixpkgs revision than `flake.lock`,
 - whether a **test is still live**: `/run/current-system` isn't the boot
   default (`/nix/var/nix/profiles/system`), e.g. after `nixos-rebuild test`,
-- whether `flake.lock` has **uncommitted** changes,
+- whether the flake has **uncommitted** changes (staged or not),
 - every input's pinned date and revision (tooltip).
 
 Bar: a snowflake (red if the check failed), then a glyph per flag, always
 in place, lit when set and dimmed when not: power (reboot), flask (test),
-refresh-alert (switch), git-commit (uncommitted `flake.lock`), download
+refresh-alert (switch), git-commit (uncommitted changes), download
 (newer nixpkgs on GitHub). Hovering one says what it means; the text is the
 nixpkgs pin's age.
 
@@ -57,10 +59,18 @@ Then add a widget of type `filedesless/nix-status:widget` to a bar.
 
 ## Telling when a switch is pending
 
-`nix flake update` only rewrites `flake.lock`; nothing changes until the
-next switch. To see any input move (not just nixpkgs, which is all
-`nixos-version` reveals), have the system keep the lock it was built from:
+`nix flake update` only rewrites `flake.lock`, and an edited `.nix` file
+does nothing either until the next switch. To see any change, have the
+system keep the flake source it was built from, and its commit (shown in
+the panel and `nixos-version --json`, `-dirty` for a build from
+uncommitted edits), in a module that gets the flake's `inputs`:
 
 ```nix
-environment.etc."nixos/flake.lock".source = ./flake.lock; # path from this module
+environment.etc."nixos/flake".source = inputs.self.outPath;
+system.configurationRevision = inputs.self.rev or inputs.self.dirtyRev or null;
 ```
+
+The widget compares that tree with the files git tracks, as a git flake
+only sees those: an untracked file doesn't count until it's `git add`ed.
+Keeping just the lock (`environment.etc."nixos/flake.lock".source =
+./flake.lock;`) still works, but only notices inputs moving.
