@@ -78,6 +78,8 @@ local function attention(s)
   return card(rows)
 end
 
+-- Every input's pin, in a card of fixed height that scrolls past six, so the
+-- panel's height doesn't depend on how many inputs the flake has.
 local function inputRows(s)
   local rows = {}
   for _, input in ipairs(s.inputs or {}) do
@@ -86,7 +88,9 @@ local function inputRows(s)
       ui.label({ text = `{input.rev}  {input.date}  ({ago(input.age)})`, fontSize = 12, color = "on_surface/0.7" }),
     }))
   end
-  return card(rows)
+  return ui.column({ fill = CARD, radius = 8, paddingV = 4, paddingH = 4, height = 144 }, {
+    ui.scroll({ flexGrow = 1 }, { ui.column({ gap = 6 }, rows) }),
+  })
 end
 
 local function render()
@@ -138,9 +142,7 @@ local function render()
     checked ..= ` · GitHub {remote.checkedAt}`
   end
 
-  -- The panel's height in plugin.toml less its padding: the column doesn't
-  -- stretch to the panel on its own, and the spacer below needs room to grow.
-  panel.render(ui.column({ gap = 8, height = 532 }, {
+  panel.render(ui.column({ gap = 8 }, {
     ui.row({ justify = "space_between", align = "center" }, {
       ui.label({ text = "NixOS", fontSize = 16 }),
       ui.label({ text = s.nixpkgsBranch or "", fontSize = 12 }),
@@ -158,8 +160,6 @@ local function render()
       fontSize = 11,
       color = "on_surface/0.7",
     }),
-    -- Keeps the buttons at the bottom while the flake has fewer than 8 inputs.
-    ui.column({ flexGrow = 1 }, {}),
     ui.row({ gap = 8, align = "center", justify = "space_between" }, buttons),
   }))
 end

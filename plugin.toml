@@ -19,13 +19,12 @@ tags = ["bar", "panel", "service", "system", "nixos", "utility"]
 dependencies = ["nh", "git", "curl", "jq"]
 
 # Details and the Check / Switch / Back / Update buttons; the widget opens it.
-# The height doesn't follow the content: it fits up to 8 flake inputs.
-# panel.luau's root column is this height less the padding (28).
+# The height doesn't follow the content; the inputs list scrolls past six.
 [[panel]]
 id = "panel"
 entry = "panel.luau"
 width = 440
-height = 560
+height = 532
 placement = "floating"
 position = "auto"
 open_near_click = true
